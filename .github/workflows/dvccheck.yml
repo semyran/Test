@@ -1,0 +1,41 @@
+name: DVC File Check
+on: [pull_request, push]
+
+jobs:
+  check-dvc-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        # Fetch entire history for proper DVC status checks
+        with:
+          fetch-depth: 0
+
+      - name: Setup DVC
+        # Use the official setup-dvc action from GitHub Marketplace
+        uses: iterative/setup-dvc@v1
+
+      - name: Install DVC (if not using setup-dvc action)
+        # Alternatively, install DVC via pip if preferred
+        run: pip install dvc
+
+      - name: Verify all intended files are DVC-tracked
+        # The '--untracked-files=no' option ensures that only tracked files are reported on.
+        # The script below explicitly checks for untracked files in the workspace.
+        run: |
+          # Use git status to find any files that are not git-tracked (which DVC-tracked files should be via their .dvc files)
+          # and not in .gitignore.
+          UNTRACKED_GIT_FILES=$(git status --porcelain --untracked-files=all | grep -v '^\?\?.*\.dvc$' | grep '^\?\?')
+         
+          if [ -n "$UNTRACKED_GIT_FILES" ]; then
+            echo "::error::Found files that are not tracked by Git or DVC. Ensure all data files are added to DVC and their .dvc files are committed to Git."
+            echo "Untracked files:"
+            echo "$UNTRACKED_GIT_FILES"
+            exit 1
+          fi
+         
+          # Use dvc data status to verify all DVC-tracked files are committed to DVC and the workspace is in sync with the last Git commit
+          dvc data status
+         
+          # Optional: Check if all DVC-tracked files have been pushed to the remote
+          # dvc status -q --cloud || { echo "::error::DVC files not pushed to remote."; exit 1; }
